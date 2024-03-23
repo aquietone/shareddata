@@ -3,6 +3,7 @@ SharedData.lua v0.1
 author: aquietone
 
 This script provides a TLO with bot data made available via actors.
+Per server/character configurations are stored in config/shareddata/ folder.
 
 Run with:
 /lua run shareddata
@@ -87,6 +88,8 @@ local SharedData = {
     propertyGUIAction = 'Add',
     selectedCharacter = nil,
     selectedProperty = -1,
+    showAddError = false,
+    resendAll = true,
     data = {},
     propertyInput = {},
 }
@@ -127,6 +130,8 @@ function SharedData.messageHandler(message)
             SharedData.removeProperty(key)
         end
     else
+        -- If we see a new character show up, trigger re-sending all properties once even if their values haven't changed.
+        if not SharedData.data[content.name] then SharedData.resendAll = true end
         SharedData.data[content.name] = SharedData.data[content.name] or {}
         for k, v in pairs(content) do
             if k ~= 'name' then
@@ -303,10 +308,11 @@ function SharedData.publish()
     for _,property in ipairs(SharedData.properties) do
         SharedData.data[me] = SharedData.data[me] or {}
         local current = mq.parse(property.expression)
-        if SharedData.data[me][property.key] ~= current then
+        if SharedData.resendAll or SharedData.data[me][property.key] ~= current then
             message[property.key] = current
         end
     end
+    SharedData.resendAll = false
     SharedData.actor:send(message)
 end
 

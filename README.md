@@ -1,5 +1,16 @@
 # shareddata
-Implements an actor based SharedData TLO for MacroQuest
+Implements an actor based SharedData TLO for MacroQuest.
+
+## Overview
+
+
+The script will broadcast messages over the actor system at the configured frequency containing key/value pairs of all configured properties.  
+Properties include a key (the name the property will be exposed as in the character data) and an expression (a parsable line of macroscript like ${Me.PctHPs}).  
+Properties will only be included in messages when the value has changed.  
+Messages will still be published even if no properties have changed, just as a heartbeat mechanism.  
+Characters which stop broadcasting data will have their data marked as stale after the configured staleDataTimeout amount of time.  
+The script will check for stale character data and remove it after the configured cleanupInterval amount of time.  
+Per server/character configurations are stored in config/shareddata/ folder.  
 
 # Usage
 
