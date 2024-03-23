@@ -4,11 +4,37 @@ author: aquietone
 
 This script provides a TLO with bot data made available via actors.
 
-/lua parse mq.TLO.SharedData.Characters('character1')().PctHPs
+/lua parse example usage:  
 
+- Get list of character names which have data available:
+> /lua parse mq.TLO.SharedData.Names()[1]
+Character1
+
+- Get data for a single character in lua table format
+> /lua parse mq.TLO.SharedData.Characters('character1')().PctHPs
+100
+
+- Get data for all characters in lua table format
+> /lua parse mq.TLO.SharedData.Characters().Character1.PctHPs
+
+Lua example usage:  
+
+-- Use list of Names to output PctHPs value for each character
+local names = mq.TLO.SharedData.Names()
+for _,name in ipairs(names) do
+    printf('PctHPs for %s: %s', name, mq.TLO.SharedData.Characters(name)().PctHPs)
+end
+
+-- Output PctHPs for a specific character by name
 local characterData = mq.TLO.SharedData.Characters('Character1')()
 for k,v in pairs(characterData) do
     printf('%s: %s', k, v)
+end
+
+-- Output PctHPs for all characters in characters table
+local allCharacters = mq.TLO.SharedData.Characters()
+for name,data in pairs(allCharacters) do
+    printf('PctHPs for %s: %s', name, data.PctHPs)
 end
 ]]
 local mq = require 'mq'
@@ -287,8 +313,9 @@ function SharedData.initTLO()
         Frequency = function() return 'int', SharedData.settings.frequency end,
         CleanupInterval = function() return 'int', SharedData.settings.cleanupInterval end,
         StaleDataTimeout = function() return 'int', SharedData.settings.staleDataTimeout end,
+        Names = function() local peers = {} for name,_ in pairs(SharedData.data) do table.insert(peers, name) end return 'table', peers end,
+        Characters = function(i) return 'table', i and SharedData.data[i] or SharedData.data end
     }
-    tloMembers.Characters = function(i) return 'table', SharedData.data[i] end
 
     SharedDataType = mq.DataType.new('SharedDataType', {
         Members = tloMembers,
