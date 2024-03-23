@@ -208,7 +208,7 @@ function SharedData.renderPropertyListTab()
                 SharedData.doSave = true
             end
         end
-        if imgui.BeginTable('properties', 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.BordersInner, ImGuiTableFlags.RowBg), ImVec2(-1,-1)) then
+        if imgui.BeginTable('properties', 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.BordersInner, ImGuiTableFlags.RowBg, ImGuiTableFlags.ScrollY), ImVec2(-1,-1)) then
             imgui.TableSetupColumn('##selected', ImGuiTableColumnFlags.None, 1)
             imgui.TableSetupColumn('Key', ImGuiTableColumnFlags.None, 2)
             imgui.TableSetupColumn('Expression', ImGuiTableColumnFlags.None, 4)
@@ -260,7 +260,7 @@ function SharedData.renderDataPreviewTab()
             ImGui.EndCombo()
         end
         if SharedData.data[SharedData.selectedCharacter] then
-            if imgui.BeginTable('Data', 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.BordersInner, ImGuiTableFlags.RowBg), ImVec2(-1,-1)) then
+            if imgui.BeginTable('Data', 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.BordersInner, ImGuiTableFlags.RowBg, ImGuiTableFlags.ScrollY), ImVec2(-1,-1)) then
                 imgui.TableSetupColumn('Key', ImGuiTableColumnFlags.None, 2)
                 imgui.TableSetupColumn('Expression', ImGuiTableColumnFlags.None, 3)
                 imgui.TableSetupScrollFreeze(0, 1)
