@@ -135,6 +135,15 @@ function SharedData.messageHandler(message)
         SharedData.data[content.name] = SharedData.data[content.name] or {}
         for k, v in pairs(content) do
             if k ~= 'name' then
+                if v == 'TRUE' then
+                    v = true
+                elseif v == 'FALSE' then
+                    v = false
+                elseif tostring(tonumber(v)) == v then
+                    v = tonumber(v)
+                elseif v == 'NULL' then
+                    v = nil
+                end
                 SharedData.data[content.name][k] = v
             end
         end
@@ -262,11 +271,11 @@ function SharedData.renderDataPreviewTab()
                     imgui.TableNextRow()
                     imgui.TableNextColumn()
 
-                    imgui.Text(k)
+                    imgui.Text('%s', k)
 
                     imgui.TableNextColumn()
 
-                    imgui.Text(v)
+                    imgui.Text('%s', v)
                 end
 
                 imgui.EndTable()
