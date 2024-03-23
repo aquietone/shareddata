@@ -16,7 +16,7 @@ Implements an actor based SharedData TLO for MacroQuest
 ## Available commands
 | Command | Description |
 | :--- | :---- |
-||/sdc|show help output|
+|/sdc|show help output|
 |/sdc help|show help output|
 |/sdc reload|reload settings for this character|
 |/noparse /sdc add Key Expression|add new property to be broadcast|
