@@ -26,6 +26,10 @@ Add key,value pairs of data to be shared using UI or commands.
 /sdc remove PctEndurance
 ```
 
+```
+/sdc list
+```
+
 # Other Settings
 
 - `frequency` - Delay, in milliseconds, for the main loop.

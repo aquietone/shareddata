@@ -195,10 +195,14 @@ function SharedData.render()
 end
 
 function SharedData.publish()
-    local message = {sentAt = mq.gettime(), name=mq.TLO.Me()}
+    local me = mq.TLO.Me() or ''
+    local message = {sentAt = mq.gettime(), name=me}
     for _,property in ipairs(SharedData.properties) do
+        SharedData.data[me] = SharedData.data[me] or {}
         local current = mq.parse(property.expression)
-        message[property.key] = current
+        if SharedData.data[me][property.key] ~= current then
+            message[property.key] = current
+        end
     end
     SharedData.actor:send(message)
 end
@@ -226,16 +230,23 @@ function SharedData.bind(...)
     local args = {...}
     -- help
     if #args == 0 or args[1] == 'help' then
-        printf('SharedDataClient v%s', SharedData._version)
+        local output = '\a-t[SharedDataClient]\ax v\ay%s\ax\n'
+        output = output .. '\t\aw- /sdc add key expression'
+        output = output .. '\t\aw- /sdc remove key'
+        output = output .. '\t\aw- /sdc list'
+        output = output .. '\t\aw- /sdc show'
+        output = output .. '\t\aw- /sdc hide'
+        output = output .. '\t\aw- /sdc help'
+        printf(output, SharedData._version)
     -- add property
     elseif args[1] == 'add' then
         local key = args[2]
         local value = args[3]
         if key and value then
             for _,property in ipairs(SharedData.properties) do
-                if property.key == key then printf('Key "%s" already present, skipping', key) return end
+                if property.key == key then printf('\a-t[SharedData]\ax Key "\ay%s\ax" already present, skipping', key) return end
             end
-            printf('Key "%s" added', key)
+            printf('\a-t[SharedData]\ax Key "\ay%s\ax" added', key)
             table.insert(SharedData.properties, {key = key, expression = value})
         end
     -- remove property
@@ -246,9 +257,16 @@ function SharedData.bind(...)
             for i,property in ipairs(SharedData.properties) do
                 if property.key == key then remove_idx = i break end
             end
-            printf('Key "%s" removed', key)
+            printf('\a-t[SharedData]\ax Key "\ay%s\ax" removed', key)
             SharedData.properties[remove_idx] = nil
         end
+    -- list properties
+    elseif args[1] == 'list' then
+        local output = ''
+        for _,property in ipairs(SharedData.properties) do
+            output = output .. ('- \ay%s\ax: \aw%s\ax\n'):format(property.key, property.expression)
+        end
+        print(output)
     -- show ui
     elseif args[1] == 'show' then
         SharedData.openGUI = true
@@ -310,8 +328,9 @@ local function main()
     SharedData.init()
 
     while true do
+        local inGame = mq.TLO.EverQuest.GameState()
         SharedData.cleanup()
-        SharedData.publish()
+        if inGame == 'INGAME' then SharedData.publish() end
         if SharedData.doSave then SharedData.saveSettings() SharedData.doSave = false end
         mq.delay(SharedData.settings.frequency)
     end
