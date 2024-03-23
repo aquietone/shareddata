@@ -1,5 +1,5 @@
 --[[
-SharedData.lua v0.1
+SharedData.lua v0.2
 author: aquietone
 
 This script provides a TLO with bot data made available via actors.
@@ -20,6 +20,11 @@ Available commands:
 /sdc list -- list all properties
 /sdc remove Key -- remove property from broadcasting
 /sdc removeall Key -- remove property from broadcasting for all characters
+/sdc addsource filename -- add config/shareddata/customfilename.lua as a data source
+/sdc addsourceall filename -- add config/shareddata/filename.lua as a data source for all characters
+/sdc removesource filename -- remove config/shareddata/filename.lua from custom data sources
+/sdc removesourceall filename -- remove config/shareddata/filename.lua from custom data sources for all characters
+/sdc listsources -- list all custom data sources
 /sdc show -- open the UI
 /sdc hide -- close the UI
 
@@ -44,6 +49,7 @@ Character1
 
 - Get data for all characters in lua table format
 > /lua parse mq.TLO.SharedData.Characters().Character1.PctHPs
+100
 
 Lua example usage:  
 
@@ -64,13 +70,34 @@ local allCharacters = mq.TLO.SharedData.Characters()
 for name,data in pairs(allCharacters) do
     printf('PctHPs for %s: %s', name, data.PctHPs)
 end
+
+Custom Data Source example:
+-- begin config/shareddata/custom.lua
+local mq = require 'mq'
+return {
+    BlockedBuffs = function()
+        local blockedBuffs = {}
+        for i=1,20 do
+            local blockedBuff = mq.TLO.Me.BlockedBuff(i)
+            if blockedBuff() then
+                table.insert(blockedBuffs, blockedBuff.ID())
+            end
+        end
+        return blockedBuffs
+    end,
+}
+-- end config/shareddata/custom.lua
+
+> /lua parse mq.TLO.SharedData.Characters('Character1')().BlockedBuffs[1]
+30739
+
 ]]
 local mq = require 'mq'
 local imgui = require 'ImGui'
 local actors = require 'actors'
 
 local SharedData = {
-    _version = "0.1",
+    _version = "0.2",
     properties = {
         -- Sample properties
         {key='PctHPs', expression='${Me.PctHPs}'},
@@ -81,6 +108,8 @@ local SharedData = {
         cleanupInterval = 10000,
         staleDataTimeout = 60000,
     },
+    customDataSources = {},
+    customData = {},
     openGUI = true,
     shouldDrawGUI = true,
     openPropertyGUI = false,
@@ -93,6 +122,11 @@ local SharedData = {
     data = {},
     propertyInput = {},
 }
+
+local function fileExists(filename)
+    local f = io.open(filename, "r")
+    if f ~= nil then io.close(f) return true else return false end
+end
 
 function SharedData.addProperty(key, expression)
     if key and expression then
@@ -118,6 +152,55 @@ function SharedData.removeProperty(key, index)
     end
 end
 
+function SharedData.addSource(filename)
+    if filename then
+        if not fileExists(mq.configDir..'/shareddata/'..filename) then
+            printf('\a-t[SharedData]\ax File \ay%s\ax does not exist', filename)
+            SharedData.errorMessage = 'File does not exist'
+            return false
+        end
+        for _,f in ipairs(SharedData.customDataSources) do
+            if filename == f then
+                printf('\a-t[SharedData]\ax Custom Data Source \ay%s\ax is already present, skipping', filename)
+                return false
+            end
+        end
+        table.insert(SharedData.customDataSources, filename)
+        local ok, customData = pcall(loadfile, mq.configDir..'/shareddata/'..filename)
+        if ok and customData then
+            SharedData.customData[filename] = customData()
+        end
+        SharedData.doSave = true
+        return true
+    end
+end
+
+function SharedData.removeSource(filename)
+    if filename then
+        local removeIdx = -1
+        for i,f in ipairs(SharedData.customDataSources) do
+            if filename == f then removeIdx = i break end
+        end
+        if removeIdx ~= -1 then
+            table.remove(SharedData.customDataSources, removeIdx)
+            printf('\a-t[SharedData]\ax Custom Data Source \ay%s\ax removed', filename)
+            SharedData.customData[filename] = nil
+            SharedData.doSave = true
+        end
+    end
+end
+
+local function processTable(parent, tableName, tableValue)
+    parent[tableName] = {}
+    for key, value in pairs(tableValue) do
+        if type('value') == 'table' then
+            processTable(parent[tableName], key, value)
+        else
+            parent[tableName][key] = value
+        end
+    end
+end
+
 function SharedData.messageHandler(message)
     local content = message()
     if content.action then
@@ -128,6 +211,12 @@ function SharedData.messageHandler(message)
         elseif content.action == 'remove' then
             local key = content.key
             SharedData.removeProperty(key)
+        elseif content.action == 'addsource' then
+            local filename = content.filename
+            SharedData.addSource(filename)
+        elseif content.action == 'removesource' then
+            local filename = content.filename
+            SharedData.removeSource(filename)
         end
     else
         -- If we see a new character show up, trigger re-sending all properties once even if their values haven't changed.
@@ -143,6 +232,8 @@ function SharedData.messageHandler(message)
                     v = tonumber(v)
                 elseif v == 'NULL' then
                     v = nil
+                elseif type(v) == 'table' then
+                    processTable(SharedData.data[content.name], k, v)
                 end
                 SharedData.data[content.name][k] = v
             end
@@ -152,22 +243,36 @@ end
 
 function SharedData.renderPropertyEditor()
     if not SharedData.openPropertyGUI then return end
-    SharedData.openPropertyGUI, SharedData.shouldDrawPropertyGUI = imgui.Begin(SharedData.propertyGUIAction..' Property', SharedData.openPropertyGUI)
+    SharedData.openPropertyGUI, SharedData.shouldDrawPropertyGUI = imgui.Begin(SharedData.propertyGUIAction, SharedData.openPropertyGUI)
     if SharedData.shouldDrawPropertyGUI then
-        if SharedData.propertyGUIAction == 'Add' then
+        if SharedData.propertyGUIAction == 'Add Property' then
             SharedData.propertyInput.key = imgui.InputText('Key', SharedData.propertyInput.key or '')
+            SharedData.propertyInput.expression = imgui.InputText('Expression', SharedData.propertyInput.expression or '')
+        elseif SharedData.propertyGUIAction == 'Add Data Source' then
+            SharedData.propertyInput.key = imgui.InputText('Filename', SharedData.propertyInput.key or '')
         else
             imgui.Text('Key: %s', SharedData.propertyInput.key)
+            SharedData.propertyInput.expression = imgui.InputText('Expression', SharedData.propertyInput.expression or '')
         end
-        SharedData.propertyInput.expression = imgui.InputText('Expression', SharedData.propertyInput.expression or '')
         if imgui.Button('Save') then
-            if SharedData.propertyGUIAction == 'Add' then
+            if SharedData.propertyGUIAction == 'Add Property' then
                 local added = SharedData.addProperty(SharedData.propertyInput.key, SharedData.propertyInput.expression)
                 if added then
                     -- Add may fail if key already exists, keep window open and show error
                     SharedData.openPropertyGUI = false
                     SharedData.propertyInput = {}
                     SharedData.showAddError = false
+                    SharedData.errorMessage = nil
+                else
+                    SharedData.showAddError = true
+                end
+            elseif SharedData.propertyGUIAction == 'Add Data Source' then
+                local added = SharedData.addSource(SharedData.propertyInput.key)
+                if added then
+                    SharedData.openPropertyGUI = false
+                    SharedData.propertyInput = {}
+                    SharedData.showAddError = false
+                    SharedData.errorMessage = nil
                 else
                     SharedData.showAddError = true
                 end
@@ -180,7 +285,7 @@ function SharedData.renderPropertyEditor()
             end
         end
         if SharedData.showAddError then
-            imgui.TextColored(1,0,0,1, 'Property already exists')
+            imgui.TextColored(1,0,0,1, SharedData.errorMessage or 'Entry already exists')
         end
     end
     imgui.End()
@@ -188,17 +293,23 @@ end
 
 function SharedData.renderPropertyListTab()
     if imgui.BeginTabItem('Properties') then
+        if SharedData.currentTab ~= 'Properties' then
+            SharedData.currentTab = 'Properties'
+            SharedData.selectedProperty = -1
+        end
         if imgui.SmallButton('Add Property') then
             SharedData.openPropertyGUI = true
-            SharedData.propertyGUIAction = 'Add'
+            SharedData.propertyGUIAction = 'Add Property'
             SharedData.showAddError = false
+            SharedData.errorMessage = nil
         end
         if SharedData.selectedProperty ~= -1 then
             imgui.SameLine()
             if imgui.SmallButton('Edit Property') then
                 SharedData.openPropertyGUI = true
-                SharedData.propertyGUIAction = 'Edit'
+                SharedData.propertyGUIAction = 'Edit Property'
                 SharedData.showAddError = false
+                SharedData.errorMessage = nil
                 SharedData.propertyInput = {key = SharedData.properties[SharedData.selectedProperty].key, expression = SharedData.properties[SharedData.selectedProperty].expression, index = SharedData.selectedProperty}
             end
             imgui.SameLine()
@@ -217,7 +328,6 @@ function SharedData.renderPropertyListTab()
 
             local clipper = ImGuiListClipper.new()
             clipper:Begin(#SharedData.properties)
-            local remove_idx = -1
             while clipper:Step() do
                 for row_n = clipper.DisplayStart, clipper.DisplayEnd - 1, 1 do
                     local property = SharedData.properties[row_n+1]
@@ -241,11 +351,84 @@ function SharedData.renderPropertyListTab()
                     imgui.Text(property.expression)
                 end
             end
-            if remove_idx ~= -1 then table.remove(SharedData.properties, remove_idx) end
 
             imgui.EndTable()
         end
         imgui.EndTabItem()
+    end
+end
+
+function SharedData.renderCustomDataSourcesTab()
+    if imgui.BeginTabItem('Custom Sources') then
+        if SharedData.currentTab ~= 'Custom Sources' then
+            SharedData.currentTab = 'Custom Sources'
+            SharedData.selectedProperty = -1
+        end
+        if imgui.SmallButton('Add Data Source') then
+            SharedData.openPropertyGUI = true
+            SharedData.propertyGUIAction = 'Add Data Source'
+            SharedData.showAddError = false
+            SharedData.errorMessage = nil
+        end
+        if SharedData.selectedProperty ~= -1 then
+            imgui.SameLine()
+            if imgui.SmallButton('Remove Data Source') then
+                SharedData.removeSource(SharedData.customDataSources[SharedData.selectedProperty])
+                SharedData.selectedProperty = -1
+                SharedData.doSave = true
+            end
+        end
+        if imgui.BeginTable('customsources', 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.BordersInner, ImGuiTableFlags.RowBg, ImGuiTableFlags.ScrollY), ImVec2(-1,-1)) then
+            imgui.TableSetupColumn('##selected', ImGuiTableColumnFlags.None, 1)
+            imgui.TableSetupColumn('Filename', ImGuiTableColumnFlags.None, 2)
+            imgui.TableSetupScrollFreeze(0, 1)
+            imgui.TableHeadersRow()
+
+            local clipper = ImGuiListClipper.new()
+            clipper:Begin(#SharedData.customDataSources)
+            while clipper:Step() do
+                for row_n = clipper.DisplayStart, clipper.DisplayEnd - 1, 1 do
+                    local filename = SharedData.customDataSources[row_n+1]
+
+                    imgui.TableNextRow()
+                    imgui.TableNextColumn()
+
+                    local value, pressed = imgui.Checkbox('##selected'..filename, row_n+1 == SharedData.selectedProperty)
+                    if pressed then
+                        if value then
+                            SharedData.selectedProperty = row_n+1
+                        else
+                            SharedData.selectedProperty = -1
+                        end
+                    end
+                    imgui.TableNextColumn()
+
+                    imgui.Text(filename)
+                end
+            end
+
+            imgui.EndTable()
+        end
+        imgui.EndTabItem()
+    end
+end
+
+local YELLOW = ImVec4(1, 1, 0, 1)
+local function drawNestedTableTree(table)
+    for k, v in pairs(table) do
+        ImGui.TableNextRow()
+        ImGui.TableNextColumn()
+        if type(v) == 'table' then
+            local open = ImGui.TreeNodeEx(tostring(k), ImGuiTreeNodeFlags.SpanFullWidth)
+            if open then
+                drawNestedTableTree(v)
+                ImGui.TreePop()
+            end
+        else
+            ImGui.TextColored(YELLOW, '%s', k)
+            ImGui.TableNextColumn()
+            ImGui.Text('%s', v)
+        end
     end
 end
 
@@ -260,23 +443,13 @@ function SharedData.renderDataPreviewTab()
             ImGui.EndCombo()
         end
         if SharedData.data[SharedData.selectedCharacter] then
-            if imgui.BeginTable('Data', 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.BordersInner, ImGuiTableFlags.RowBg, ImGuiTableFlags.ScrollY), ImVec2(-1,-1)) then
+            if imgui.BeginTable('Data', 2, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.ScrollY), ImVec2(-1,-1)) then
                 imgui.TableSetupColumn('Key', ImGuiTableColumnFlags.None, 2)
-                imgui.TableSetupColumn('Expression', ImGuiTableColumnFlags.None, 3)
+                imgui.TableSetupColumn('Value', ImGuiTableColumnFlags.None, 3)
                 imgui.TableSetupScrollFreeze(0, 1)
                 imgui.TableHeadersRow()
 
-                for k,v in pairs(SharedData.data[SharedData.selectedCharacter]) do
-
-                    imgui.TableNextRow()
-                    imgui.TableNextColumn()
-
-                    imgui.Text('%s', k)
-
-                    imgui.TableNextColumn()
-
-                    imgui.Text('%s', v)
-                end
+                drawNestedTableTree(SharedData.data[SharedData.selectedCharacter])
 
                 imgui.EndTable()
             end
@@ -300,6 +473,7 @@ function SharedData.render()
     if SharedData.shouldDrawGUI then
         if imgui.BeginTabBar('SharedDataTabs') then
             SharedData.renderPropertyListTab()
+            SharedData.renderCustomDataSourcesTab()
             SharedData.renderDataPreviewTab()
             SharedData.renderSettingsTab()
 
@@ -321,13 +495,22 @@ function SharedData.publish()
             message[property.key] = current
         end
     end
+    for _,customDataTable in pairs(SharedData.customData) do
+        for k,v in pairs(customDataTable) do
+            local current = v
+            if type(v) == 'function' then
+                local ok, result = pcall(v)
+                if ok then
+                    current = result
+                end
+            end
+            if SharedData.resendAll or SharedData.data[me][k] ~= current then
+                message[k] = current
+            end
+        end
+    end
     SharedData.resendAll = false
     SharedData.actor:send(message)
-end
-
-local function fileExists(file_name)
-    local f = io.open(file_name, "r")
-    if f ~= nil then io.close(f) return true else return false end
 end
 
 function SharedData.loadSettings()
@@ -337,11 +520,18 @@ function SharedData.loadSettings()
     if not settings then return end
     for k,v in pairs(settings.settings) do SharedData.settings[k] = v end
     for k,v in pairs(settings.properties) do SharedData.properties[k] = v end
+    for _,v in ipairs(settings.customDataSources or {}) do
+        table.insert(SharedData.customDataSources, v)
+        local ok, customData = pcall(loadfile, mq.configDir..'/shareddata/'..v)
+        if ok and customData then
+            SharedData.customData[v] = customData()
+        end
+    end
 end
 
 function SharedData.saveSettings()
     local configFile = ('%s/shareddata/%s_%s_shareddata.lua'):format(mq.configDir, mq.TLO.EverQuest.Server(), mq.TLO.Me())
-    mq.pickle(configFile, {settings=SharedData.settings, properties=SharedData.properties, version=SharedData._version})
+    mq.pickle(configFile, {settings=SharedData.settings, properties=SharedData.properties, customDataSources=SharedData.customDataSources, version=SharedData._version})
 end
 
 function SharedData.bind(...)
@@ -350,8 +540,15 @@ function SharedData.bind(...)
     if #args == 0 or args[1] == 'help' then
         local output = '\a-t[SharedDataClient]\ax v\ay%s\ax\n'
         output = output .. '\t\aw- /sdc add key expression'
+        output = output .. '\t\aw- /sdc addall key expression'
         output = output .. '\t\aw- /sdc remove key'
+        output = output .. '\t\aw- /sdc removeall key'
         output = output .. '\t\aw- /sdc list'
+        output = output .. '\t\aw- /sdc addsource filename'
+        output = output .. '\t\aw- /sdc addsourceall filename'
+        output = output .. '\t\aw- /sdc removesource filename'
+        output = output .. '\t\aw- /sdc removesourceall filename'
+        output = output .. '\t\aw- /sdc listsources'
         output = output .. '\t\aw- /sdc show'
         output = output .. '\t\aw- /sdc hide'
         output = output .. '\t\aw- /sdc help'
@@ -380,6 +577,31 @@ function SharedData.bind(...)
         local output = ''
         for _,property in ipairs(SharedData.properties) do
             output = output .. ('- \ay%s\ax: \aw%s\ax\n'):format(property.key, property.expression)
+        end
+        print(output)
+    -- add custom data source filename to this character
+    elseif args[1] == 'addsource' then
+        SharedData.addSource(args[2])
+    -- add custom data source filename to all characters
+    elseif args[1] == 'addsourceall' then
+        local filename = args[2]
+        if filename then
+            SharedData.actor:send({action = 'addsource', filename = filename})
+        end
+    -- remove custom data source filename on this character
+    elseif args[1] == 'removesource' then
+        SharedData.removeSource(args[2])
+    -- remove custom data source filename on all characters
+    elseif args[1] == 'removesourceall' then
+        local filename = args[2]
+        if filename then
+            SharedData.actor:send({action = 'removesource', filename = filename})
+        end
+    -- list custom data source filenames
+    elseif args[1] == 'listsources' then
+        local output = ''
+        for _,filename in ipairs(SharedData.customDataSources) do
+            output = output .. ('- \aw%s\ax\n'):format(filename)
         end
         print(output)
     -- show ui

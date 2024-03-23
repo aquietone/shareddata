@@ -12,6 +12,8 @@ Characters which stop broadcasting data will have their data marked as stale aft
 The script will check for stale character data and remove it after the configured cleanupInterval amount of time.  
 Per server/character configurations are stored in config/shareddata/ folder.  
 
+Includes support for defining custom data sources to output data other than what is available via existing MQ TLOs. See section on Custom Data Sources.
+
 # Usage
 
 ## Run with
@@ -105,3 +107,35 @@ Add key,value pairs of data to be shared using UI or commands.
 - `frequency` - Delay, in milliseconds, for the main loop.
 - `cleanupInterval` - How often to scan, in milliseconds, character data table for stale data. Default: 15000
 - `staleDataTimeout` - How long to wait, in milliseconds, for updates from a character before considering that characters data to be stale. Default: 60000
+
+# Custom Data Sources
+
+Properties are limited to returning what is available via MacroScript such as `${Me.PctHPs}`. Custom data sources provide a way to implement your own lua functions to expose customized character data.
+
+1. Create a new file under `config/shareddata` such as `custom.lua`.  
+2. Return a table of key/value pairs from `custom.lua`.  
+3. Add `custom.lua` via the UI `Custom Sources` tab or with `/sdc addsource custom.lua`.  
+
+The key/value pairs returned by your `custom.lua` can return complex data such as lua tables. For example, below code outputs a key `BlockedBuffs` whose value is a lua table of blocked buff IDs.  
+
+```lua
+local mq = require 'mq'
+return {
+    BlockedBuffs = function()
+        local blockedBuffs = {}
+        for i=1,20 do
+            local blockedBuff = mq.TLO.Me.BlockedBuff(i)
+            if blockedBuff() then
+                table.insert(blockedBuffs, blockedBuff.ID())
+            end
+        end
+        return blockedBuffs
+    end,
+}
+```
+
+This can then be accessed through the TLO like:  
+```lua
+> /lua parse mq.TLO.SharedData.Characters('Character1')().BlockedBuffs[1]
+30739
+```
