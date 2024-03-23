@@ -14,7 +14,8 @@ Implements an actor based SharedData TLO for MacroQuest
 ```
 
 ## Available commands
-|:--|:--|
+| Command | Description |
+| :--- | :---- |
 ||/sdc|show help output|
 |/sdc help|show help output|
 |/sdc reload|reload settings for this character|
@@ -27,7 +28,8 @@ Implements an actor based SharedData TLO for MacroQuest
 |/sdc hide|close the UI|
 
 ## TLO
-|:--|:--|
+| TLO | Description |
+| :--- | :---- |
 |SharedData()|print script version|
 |SharedData.Names()|return lua table of character names|
 |SharedData.Characters()|return lua table of all character data|
