@@ -4,6 +4,33 @@ author: aquietone
 
 This script provides a TLO with bot data made available via actors.
 
+Run with:
+/lua run shareddata
+
+Run without showing UI on launch with:
+/lua run shareddata bg
+
+Available commands:
+/sdc -- show help output
+/sdc help -- show help output
+/sdc reload -- reload settings for this character
+/noparse /sdc add Key Expression -- add new property to be broadcast
+/noparse /sdc addall Key Expression -- add new property to be broadcast for all characters
+/sdc list -- list all properties
+/sdc remove Key -- remove property from broadcasting
+/sdc removeall Key -- remove property from broadcasting for all characters
+/sdc show -- open the UI
+/sdc hide -- close the UI
+
+TLO:
+SharedData() -- print script version
+SharedData.Names() -- return lua table of character names
+SharedData.Characters() -- return lua table of all character data
+SharedData.Characters('name1')() -- return lua table of name1 character data
+SharedData.Frequency() -- get update frequency setting value
+SharedData.CleanupInterval() -- get cleanupInterval setting value
+SharedData.StaleDataTimeout() -- get staleDataTimeout setting value
+
 /lua parse example usage:  
 
 - Get list of character names which have data available:
@@ -64,11 +91,46 @@ local SharedData = {
     propertyInput = {},
 }
 
+function SharedData.addProperty(key, expression)
+    if key and expression then
+        for _,property in ipairs(SharedData.properties) do
+            if property.key == key then printf('\a-t[SharedData]\ax Key "\ay%s\ax" already present, skipping', key) return false end
+        end
+        printf('\a-t[SharedData]\ax Key "\ay%s\ax" added', key)
+        table.insert(SharedData.properties, {key = key, expression = expression})
+        SharedData.doSave = true
+        return true
+    end
+end
+
+function SharedData.removeProperty(key, index)
+    if key then
+        for i,property in ipairs(SharedData.properties) do if property.key == key then index = i break end end
+    end
+    if index and index > 0 and index <= #SharedData.properties then
+        printf('\a-t[SharedData]\ax Key "\ay%s\ax" removed', key)
+        table.remove(SharedData.properties, index)
+        SharedData.doSave = true
+    end
+end
+
 function SharedData.messageHandler(message)
-    SharedData.data[message.content.name] = SharedData.data[message.content.name] or {}
-    for k, v in pairs(message.content) do
-        if k ~= 'name' then
-            SharedData.data[message.content.name][k] = v
+    local content = message()
+    if content.action then
+        if content.action == 'add' then
+            local key = content.key
+            local expression = content.expression
+            SharedData.addProperty(key, expression)
+        elseif content.action == 'remove' then
+            local key = content.key
+            SharedData.removeProperty(key)
+        end
+    else
+        SharedData.data[content.name] = SharedData.data[content.name] or {}
+        for k, v in pairs(content) do
+            if k ~= 'name' then
+                SharedData.data[content.name][k] = v
+            end
         end
     end
 end
@@ -85,13 +147,25 @@ function SharedData.renderPropertyEditor()
         SharedData.propertyInput.expression = imgui.InputText('Expression', SharedData.propertyInput.expression or '')
         if imgui.Button('Save') then
             if SharedData.propertyGUIAction == 'Add' then
-                table.insert(SharedData.properties, {key = SharedData.propertyInput.key, expression = SharedData.propertyInput.expression})
+                local added = SharedData.addProperty(SharedData.propertyInput.key, SharedData.propertyInput.expression)
+                if added then
+                    -- Add may fail if key already exists, keep window open and show error
+                    SharedData.openPropertyGUI = false
+                    SharedData.propertyInput = {}
+                    SharedData.showAddError = false
+                else
+                    SharedData.showAddError = true
+                end
             else
                 SharedData.properties[SharedData.propertyInput.index] = {key = SharedData.propertyInput.key, expression = SharedData.propertyInput.expression}
+                -- Always close/clear input after edit
+                SharedData.openPropertyGUI = false
+                SharedData.propertyInput = {}
+                SharedData.doSave = true
             end
-            SharedData.openPropertyGUI = false
-            SharedData.propertyInput = {}
-            SharedData.doSave = true
+        end
+        if SharedData.showAddError then
+            imgui.TextColored(1,0,0,1, 'Property already exists')
         end
     end
     imgui.End()
@@ -102,17 +176,19 @@ function SharedData.renderPropertyListTab()
         if imgui.SmallButton('Add Property') then
             SharedData.openPropertyGUI = true
             SharedData.propertyGUIAction = 'Add'
+            SharedData.showAddError = false
         end
         if SharedData.selectedProperty ~= -1 then
             imgui.SameLine()
             if imgui.SmallButton('Edit Property') then
                 SharedData.openPropertyGUI = true
                 SharedData.propertyGUIAction = 'Edit'
+                SharedData.showAddError = false
                 SharedData.propertyInput = {key = SharedData.properties[SharedData.selectedProperty].key, expression = SharedData.properties[SharedData.selectedProperty].expression, index = SharedData.selectedProperty}
             end
             imgui.SameLine()
             if imgui.SmallButton('Remove Property') then
-                table.remove(SharedData.properties, SharedData.selectedProperty)
+                SharedData.removeProperty(nil, SharedData.selectedProperty)
                 SharedData.selectedProperty = -1
                 SharedData.doSave = true
             end
@@ -239,7 +315,7 @@ local function fileExists(file_name)
 end
 
 function SharedData.loadSettings()
-    local configFile = ('%s/%s_%s_shareddata.lua'):format(mq.configDir, mq.TLO.EverQuest.Server(), mq.TLO.Me())
+    local configFile = ('%s/shareddata/%s_%s_shareddata.lua'):format(mq.configDir, mq.TLO.EverQuest.Server(), mq.TLO.Me())
     if not fileExists(configFile) then return end
     local settings = assert(loadfile(configFile))()
     if not settings then return end
@@ -248,7 +324,8 @@ function SharedData.loadSettings()
 end
 
 function SharedData.saveSettings()
-    local configFile = ('%s/%s_%s_shareddata.lua'):format(mq.configDir, mq.TLO.EverQuest.Server(), mq.TLO.Me())
+    local configFile = ('%s/shareddata/%s_%s_shareddata.lua'):format(mq.configDir, mq.TLO.EverQuest.Server(), mq.TLO.Me())
+    printf('pickling')
     mq.pickle(configFile, {settings=SharedData.settings, properties=SharedData.properties, version=SharedData._version})
 end
 
@@ -266,25 +343,22 @@ function SharedData.bind(...)
         printf(output, SharedData._version)
     -- add property
     elseif args[1] == 'add' then
+        SharedData.addProperty(args[2], args[3])
+    -- broadcast add to everyone
+    elseif args[1] == 'addall' then
         local key = args[2]
         local value = args[3]
         if key and value then
-            for _,property in ipairs(SharedData.properties) do
-                if property.key == key then printf('\a-t[SharedData]\ax Key "\ay%s\ax" already present, skipping', key) return end
-            end
-            printf('\a-t[SharedData]\ax Key "\ay%s\ax" added', key)
-            table.insert(SharedData.properties, {key = key, expression = value})
+            SharedData.actor:send({action = 'add', key = key, expression = value})
         end
     -- remove property
     elseif args[1] == 'remove' then
+        SharedData.removeProperty(args[2])
+    -- broadcast remove to everyone
+    elseif args[1] == 'removeall' then
         local key = args[2]
         if key then
-            local remove_idx = -1
-            for i,property in ipairs(SharedData.properties) do
-                if property.key == key then remove_idx = i break end
-            end
-            printf('\a-t[SharedData]\ax Key "\ay%s\ax" removed', key)
-            SharedData.properties[remove_idx] = nil
+            SharedData.actor:send({action = 'remove', key = key})
         end
     -- list properties
     elseif args[1] == 'list' then
@@ -299,6 +373,8 @@ function SharedData.bind(...)
     -- hide ui
     elseif args[1] == 'hide' then
         SharedData.openGUI = false
+    elseif args[1] == 'reload' then
+        SharedData.loadSettings()
     end
 end
 
@@ -325,9 +401,10 @@ function SharedData.initTLO()
     mq.AddTopLevelObject('SharedData', SharedDataTLO)
 end
 
-function SharedData.init()
+function SharedData.init(args)
     -- read config
     SharedData.loadSettings()
+    if args and args[1] == 'bg' then SharedData.openGUI = false end
 
     -- setup binds
     mq.bind('/sdc', SharedData.bind)
@@ -351,8 +428,8 @@ function SharedData.cleanup()
     end
 end
 
-local function main()
-    SharedData.init()
+local function main(args)
+    SharedData.init(args)
 
     while true do
         local inGame = mq.TLO.EverQuest.GameState()
@@ -363,4 +440,5 @@ local function main()
     end
 end
 
-main()
+local args = {...}
+main(args)

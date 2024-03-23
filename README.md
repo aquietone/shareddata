@@ -3,7 +3,40 @@ Implements an actor based SharedData TLO for MacroQuest
 
 # Usage
 
-With lua parse:  
+## Run with
+```
+/lua run shareddata
+```
+
+## Run without showing UI on launch with
+```
+/lua run shareddata bg
+```
+
+## Available commands
+|:--|:--|
+||/sdc|show help output|
+|/sdc help|show help output|
+|/sdc reload|reload settings for this character|
+|/noparse /sdc add Key Expression|add new property to be broadcast|
+|/noparse /sdc addall Key Expression|add new property to be broadcast for all characters|
+|/sdc list|list all properties|
+|/sdc remove Key|remove property from broadcasting|
+|/sdc removeall Key|remove property from broadcasting for all characters|
+|/sdc show|open the UI|
+|/sdc hide|close the UI|
+
+## TLO
+|:--|:--|
+|SharedData()|print script version|
+|SharedData.Names()|return lua table of character names|
+|SharedData.Characters()|return lua table of all character data|
+|SharedData.Characters('name1')()|return lua table of name1 character data|
+|SharedData.Frequency()|get update frequency setting value|
+|SharedData.CleanupInterval()|get cleanupInterval setting value|
+|SharedData.StaleDataTimeout()|get staleDataTimeout setting value|
+
+## Examples read TLO with lua parse:  
 
 - Get list of character names which have data available:
 ```lua
@@ -20,7 +53,7 @@ Character1
 > /lua parse mq.TLO.SharedData.Characters().Character1.PctHPs
 ```
 
-From a lua script:  
+## Examples read TLO from a lua script:  
 ```lua
 local names = mq.TLO.SharedData.Names()
 for _,name in ipairs(names) do
@@ -37,6 +70,8 @@ for name,data in pairs(allCharacters) do
     printf('PctHPs for %s: %s', name, data.PctHPs)
 end
 ```
+
+## Adding Properties
 
 Add key,value pairs of data to be shared using UI or commands.
 
