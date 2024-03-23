@@ -108,6 +108,7 @@ function SharedData.removeProperty(key, index)
         for i,property in ipairs(SharedData.properties) do if property.key == key then index = i break end end
     end
     if index and index > 0 and index <= #SharedData.properties then
+        key = SharedData.properties[index].key
         printf('\a-t[SharedData]\ax Key "\ay%s\ax" removed', key)
         table.remove(SharedData.properties, index)
         SharedData.doSave = true
@@ -325,7 +326,6 @@ end
 
 function SharedData.saveSettings()
     local configFile = ('%s/shareddata/%s_%s_shareddata.lua'):format(mq.configDir, mq.TLO.EverQuest.Server(), mq.TLO.Me())
-    printf('pickling')
     mq.pickle(configFile, {settings=SharedData.settings, properties=SharedData.properties, version=SharedData._version})
 end
 
