@@ -3,7 +3,6 @@ Implements an actor based SharedData TLO for MacroQuest.
 
 ## Overview
 
-
 The script will broadcast messages over the actor system at the configured frequency containing key/value pairs of all configured properties.  
 Properties include a key (the name the property will be exposed as in the character data) and an expression (a parsable line of macroscript like ${Me.PctHPs}).  
 Properties will only be included in messages when the value has changed.  
@@ -13,6 +12,8 @@ The script will check for stale character data and remove it after the configure
 Per server/character configurations are stored in config/shareddata/ folder.  
 
 Includes support for defining custom data sources to output data other than what is available via existing MQ TLOs. See section on Custom Data Sources.
+
+The script can be included into other scripts with require as well. See section on requiring SharedDataClient.
 
 # Usage
 
@@ -139,3 +140,24 @@ This can then be accessed through the TLO like:
 > /lua parse mq.TLO.SharedData.Characters('Character1')().BlockedBuffs[1]
 30739
 ```
+
+# Requiring SharedDataClient in other scripts
+
+To make use of SharedDataClient from another lua script, follow below example:
+```lua
+local client = require('shareddata.client')
+client.init(true, 'unique_mailbox_name', mq.luaDir..'/myscript/my_custom_data_source.lua')
+
+while true do
+    -- let the client publish whatever data it needs to publish
+    client.process()
+    -- make use of the data received by the client
+    for charname, chardata in pairs(client.data) do
+        -- do stuff
+    end
+    mq.delay(1000)
+end
+```
+A path to a custom data source file (like above) should be provided when requiring SharedDataClient from another script. When run in this mode, the client won't publish any other
+values except those defined in the provided custom data source file. The UI, CLI and TLO will also be disabled, so that just the script which includes the client can
+access its relevant data through `client.data`.
