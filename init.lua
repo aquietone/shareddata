@@ -1,6 +1,7 @@
 --[[
 SharedData.lua v0.2
 author: aquietone
+<inspired by E3Next SharedDataClient>
 
 This script provides a TLO with bot data made available via actors.
 Per server/character configurations are stored in config/shareddata/ folder.
