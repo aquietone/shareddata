@@ -1,5 +1,5 @@
 --[[
-SharedData.lua v0.2
+SharedData.lua v0.3
 author: aquietone
 For details, see init.lua
 ]]
@@ -11,11 +11,11 @@ local actors = require 'actors'
 ---@field data table # Contains all received character data from configured properties and data sources
 ---@field settings table # Contains settings values for the script
 local SharedData = {
-    _version = "0.2",
+    _version = "0.3",
     properties = {
         -- Sample properties
-        {key='PctHPs', expression='${Me.PctHPs}'},
-        {key='PctMana', expression='${Me.PctMana}'}
+        {key='PctHPs', expression='${Me.PctHPs}', type='MacroScript'},
+        {key='PctMana', expression='mq.TLO.Me.PctMana()', type='Lua'}
     },
     settings = {
         frequency = 250,
@@ -37,18 +37,35 @@ local SharedData = {
     propertyInput = {},
 }
 
+local loadstringTemplate = [[
+local mq = require 'mq'
+return %s
+]]
+
+local function pcallString(luastring)
+    local func, err = load(luastring)
+    if not func then
+        return false, err
+    end
+    return pcall(func)
+end
+
+local function evaluateString(luastring)
+    return pcallString((loadstringTemplate):format(luastring))
+end
+
 local function fileExists(filename)
     local f = io.open(filename, "r")
     if f ~= nil then io.close(f) return true else return false end
 end
 
-function SharedData.addProperty(key, expression)
-    if key and expression then
+function SharedData.addProperty(key, type, expression)
+    if key and expression and type then
         for _,property in ipairs(SharedData.properties) do
             if property.key == key then printf('\a-t[SharedData]\ax Key "\ay%s\ax" already present, skipping', key) return false end
         end
         printf('\a-t[SharedData]\ax Key "\ay%s\ax" added', key)
-        table.insert(SharedData.properties, {key = key, expression = expression})
+        table.insert(SharedData.properties, {key = key, expression = expression, type = type})
         SharedData.doSave = true
         return true
     end
@@ -120,8 +137,9 @@ function SharedData.messageHandler(message)
     if content.action then
         if content.action == 'add' then
             local key = content.key
+            local type = content.type
             local expression = content.expression
-            SharedData.addProperty(key, expression)
+            SharedData.addProperty(key, type, expression)
         elseif content.action == 'remove' then
             local key = content.key
             SharedData.removeProperty(key)
@@ -160,6 +178,11 @@ function SharedData.renderPropertyEditor()
     SharedData.openPropertyGUI, SharedData.shouldDrawPropertyGUI = imgui.Begin(SharedData.propertyGUIAction, SharedData.openPropertyGUI)
     if SharedData.shouldDrawPropertyGUI then
         if SharedData.propertyGUIAction == 'Add Property' then
+            local pressed = imgui.RadioButton('Lua', SharedData.propertyInput.type == 'Lua')
+            if pressed then SharedData.propertyInput.type = 'Lua' end
+            imgui.SameLine()
+            pressed = imgui.RadioButton('MacroScript', SharedData.propertyInput.type == 'MacroScript')
+            if pressed then SharedData.propertyInput.type = 'MacroScript' end
             SharedData.propertyInput.key = imgui.InputText('Key', SharedData.propertyInput.key or '')
             SharedData.propertyInput.expression = imgui.InputText('Expression', SharedData.propertyInput.expression or '')
         elseif SharedData.propertyGUIAction == 'Add Data Source' then
@@ -170,7 +193,7 @@ function SharedData.renderPropertyEditor()
         end
         if imgui.Button('Save') then
             if SharedData.propertyGUIAction == 'Add Property' then
-                local added = SharedData.addProperty(SharedData.propertyInput.key, SharedData.propertyInput.expression)
+                local added = SharedData.addProperty(SharedData.propertyInput.key, SharedData.propertyInput.type, SharedData.propertyInput.expression)
                 if added then
                     -- Add may fail if key already exists, keep window open and show error
                     SharedData.openPropertyGUI = false
@@ -191,7 +214,7 @@ function SharedData.renderPropertyEditor()
                     SharedData.showAddError = true
                 end
             else
-                SharedData.properties[SharedData.propertyInput.index] = {key = SharedData.propertyInput.key, expression = SharedData.propertyInput.expression}
+                SharedData.properties[SharedData.propertyInput.index] = {key = SharedData.propertyInput.key, expression = SharedData.propertyInput.expression, type = SharedData.propertyInput.type}
                 -- Always close/clear input after edit
                 SharedData.openPropertyGUI = false
                 SharedData.propertyInput = {}
@@ -216,6 +239,7 @@ function SharedData.renderPropertyListTab()
             SharedData.propertyGUIAction = 'Add Property'
             SharedData.showAddError = false
             SharedData.errorMessage = nil
+            SharedData.propertyInput = {type='Lua'}
         end
         if SharedData.selectedProperty ~= -1 then
             imgui.SameLine()
@@ -224,7 +248,12 @@ function SharedData.renderPropertyListTab()
                 SharedData.propertyGUIAction = 'Edit Property'
                 SharedData.showAddError = false
                 SharedData.errorMessage = nil
-                SharedData.propertyInput = {key = SharedData.properties[SharedData.selectedProperty].key, expression = SharedData.properties[SharedData.selectedProperty].expression, index = SharedData.selectedProperty}
+                SharedData.propertyInput = {
+                    key = SharedData.properties[SharedData.selectedProperty].key,
+                    expression = SharedData.properties[SharedData.selectedProperty].expression,
+                    type = SharedData.properties[SharedData.selectedProperty].type,
+                    index = SharedData.selectedProperty
+                }
             end
             imgui.SameLine()
             if imgui.SmallButton('Remove Property') then
@@ -259,10 +288,10 @@ function SharedData.renderPropertyListTab()
                     end
                     imgui.TableNextColumn()
 
-                    imgui.Text(property.key)
+                    imgui.Text('%s', property.key)
                     imgui.TableNextColumn()
 
-                    imgui.Text(property.expression)
+                    imgui.Text('%s', property.expression)
                 end
             end
 
@@ -404,9 +433,19 @@ function SharedData.publish()
     local message = {sentAt = mq.gettime(), name=me}
     for _,property in ipairs(SharedData.properties) do
         SharedData.data[me] = SharedData.data[me] or {}
-        local current = mq.parse(property.expression)
-        if SharedData.resendAll or SharedData.data[me][property.key] ~= current then
-            message[property.key] = current
+        local expression = property.expression or ''
+        if property.type == 'Lua' then
+            local success, result = evaluateString(expression)
+            if success then
+                if SharedData.resendAll or SharedData.data[me][property.key] ~= result then
+                    message[property.key] = result
+                end
+            end
+        else
+            local current = mq.parse(property.expression)
+            if SharedData.resendAll or SharedData.data[me][property.key] ~= current then
+                message[property.key] = current
+            end
         end
     end
     for _,customDataTable in pairs(SharedData.customData) do
@@ -449,7 +488,10 @@ function SharedData.loadSettings()
     local settings = assert(loadfile(configFile))()
     if not settings then return end
     for k,v in pairs(settings.settings) do SharedData.settings[k] = v end
-    for k,v in pairs(settings.properties) do SharedData.properties[k] = v end
+    for k,v in pairs(settings.properties) do
+        SharedData.properties[k] = v
+        if SharedData.properties[k].type == nil then SharedData.properties[k].type = 'MacroScript' end
+    end
     for _,v in ipairs(settings.customDataSources or {}) do
         table.insert(SharedData.customDataSources, v)
         local ok, customData = pcall(loadfile, mq.configDir..'/shareddata/'..v)
@@ -470,8 +512,8 @@ function SharedData.bind(...)
     -- help
     if #args == 0 or args[1] == 'help' then
         local output = '\a-t[SharedDataClient]\ax v\ay%s\ax\n'
-        output = output .. '\t\aw- /sdc add key expression'
-        output = output .. '\t\aw- /sdc addall key expression'
+        output = output .. '\t\aw- /sdc add key type expression'
+        output = output .. '\t\aw- /sdc addall key type expression'
         output = output .. '\t\aw- /sdc remove key'
         output = output .. '\t\aw- /sdc removeall key'
         output = output .. '\t\aw- /sdc list'
@@ -486,13 +528,16 @@ function SharedData.bind(...)
         printf(output, SharedData._version)
     -- add property
     elseif args[1] == 'add' then
-        SharedData.addProperty(args[2], args[3])
+        if args[3] == 'lua' then args[3] = 'Lua' elseif args[3] == 'macro' then args[3] = 'MacroScript' end
+        SharedData.addProperty(args[2], args[3], args[4])
     -- broadcast add to everyone
     elseif args[1] == 'addall' then
+        if args[3] == 'lua' then args[3] = 'Lua' elseif args[3] == 'macro' then args[3] = 'MacroScript' end
         local key = args[2]
-        local value = args[3]
-        if key and value then
-            SharedData.actor:send({action = 'add', key = key, expression = value})
+        local type = args[3]
+        local value = args[4]
+        if key and type and value then
+            SharedData.actor:send({action = 'add', key = key, expression = value, type = type})
         end
     -- remove property
     elseif args[1] == 'remove' then

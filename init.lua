@@ -1,5 +1,5 @@
 --[[
-SharedData.lua v0.2
+SharedData.lua v0.3
 author: aquietone
 <inspired by E3Next SharedDataClient>
 
@@ -16,8 +16,8 @@ Available commands:
 /sdc -- show help output
 /sdc help -- show help output
 /sdc reload -- reload settings for this character
-/noparse /sdc add Key Expression -- add new property to be broadcast
-/noparse /sdc addall Key Expression -- add new property to be broadcast for all characters
+/noparse /sdc add Key Type Expression -- add new property to be broadcast. Key is a unique name for the property. Type is either "lua" or "macro". Expression is a valid lua or macro string like "mq.TLO.Me.PctHPs()" or "${Me.PctHPs}"
+/noparse /sdc addall Key Type Expression -- add new property to be broadcast for all characters
 /sdc list -- list all properties
 /sdc remove Key -- remove property from broadcasting
 /sdc removeall Key -- remove property from broadcasting for all characters

@@ -4,7 +4,7 @@ Implements an actor based SharedData TLO for MacroQuest.
 ## Overview
 
 The script will broadcast messages over the actor system at the configured frequency containing key/value pairs of all configured properties.  
-Properties include a key (the name the property will be exposed as in the character data) and an expression (a parsable line of macroscript like ${Me.PctHPs}).  
+Properties include a key (the name the property will be exposed as in the character data) and an expression (a parsable line of lua or macroscript like `mq.TLO.Me.PctHPs()` or `${Me.PctHPs}`).  
 Properties will only be included in messages when the value has changed.  
 Messages will still be published even if no properties have changed, just as a heartbeat mechanism.  
 Characters which stop broadcasting data will have their data marked as stale after the configured staleDataTimeout amount of time.  
@@ -33,8 +33,8 @@ The script can be included into other scripts with require as well. See section 
 |/sdc|show help output|
 |/sdc help|show help output|
 |/sdc reload|reload settings for this character|
-|/noparse /sdc add Key Expression|add new property to be broadcast|
-|/noparse /sdc addall Key Expression|add new property to be broadcast for all characters|
+|/noparse /sdc add Key Type Expression|add new property to be broadcast|
+|/noparse /sdc addall Key Type Expression|add new property to be broadcast for all characters|
 |/sdc list|list all properties|
 |/sdc remove Key|remove property from broadcasting|
 |/sdc removeall Key|remove property from broadcasting for all characters|
@@ -92,7 +92,11 @@ end
 Add key,value pairs of data to be shared using UI or commands.
 
 ```
-/noparse /sdc add PctEndurance ${Me.PctEndurance}
+/sdc add PctHPs lua mq.TLO.Me.PctHPs()
+```
+
+```
+/noparse /sdc add PctEndurance macro ${Me.PctEndurance}
 ```
 
 ```
